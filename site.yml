@@ -1,0 +1,56 @@
+---
+#
+# Send commands to cisco device over telnet
+#
+
+# 2019/12/22
+# Takamitsu IIDA (@takamitsu-iida)
+
+# Configuration Parameters
+#
+#   commands ---  コマンドの配列
+#   network_os --- 装置種別（デフォルトはiosで、現在のところiosしか試していない）
+#   debug -- return additional info
+#   log -- create log file or not (default is false)
+#   console -- target device is console server or not (default is false)
+
+# Returns
+#
+#   stdout
+#   stdout_lines
+
+- name: execute command on cisco devices
+  hosts: r1  # telnet_routers
+  gather_facts: False
+
+  tasks:
+
+    - name: send commands
+      iida.telnet.command:
+        debug: true
+        log: true
+        console: false
+        commands:
+          - command: clear counters gig 2
+            prompt: '\[confirm\]'
+            answer: y
+          - show run int gig 2
+          - show process cpu | inc CPU
+      register: r
+
+    - name: show stdout
+      debug:
+        msg: |
+          {% for s in r.stdout %}
+          -----
+          {{ s }}
+
+          {% endfor %}
+
+    - name: command histories (for debug purpose)
+      debug:
+        var: r.command_histories
+
+    - name: prompt histories (for debug purpose)
+      debug:
+        var: r.prompt_histories

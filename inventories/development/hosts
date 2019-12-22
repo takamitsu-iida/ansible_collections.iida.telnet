@@ -1,0 +1,9 @@
+#
+# development
+#
+
+[telnet_routers]
+tr1 ansible_host=172.28.128.3
+tr2 ansible_host=172.28.128.3
+
+r1 ansible_host=192.168.122.179
