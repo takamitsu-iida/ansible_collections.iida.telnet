@@ -3,7 +3,6 @@
 #
 
 [telnet_routers]
-tr1 ansible_host=172.28.128.3
-tr2 ansible_host=172.28.128.3
+behind_bastion ansible_host=172.20.0.21
 
 r1 ansible_host=192.168.122.179

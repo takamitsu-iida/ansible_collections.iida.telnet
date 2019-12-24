@@ -20,13 +20,16 @@
 #   stdout_lines
 
 - name: execute command on cisco devices
-  hosts: r1  # telnet_routers
+  hosts: behind_bastion
+  # hosts: r1
+  # hosts: telnet_routers
   gather_facts: False
 
   tasks:
 
     - name: send commands
       iida.telnet.command:
+        delegate_to: pg04
         debug: true
         log: true
         console: false
