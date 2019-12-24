@@ -10,7 +10,7 @@ COLLECTIONS_VERSION=0.0.1
 COLLECTIONS_FILE=$(COLLECTIONS_ORG)-$(COLLECTIONS_NAME)-$(COLLECTIONS_VERSION).tar.gz
 
 
-all: help
+all: help build install
 
 help:
 	@echo "make command options"
@@ -18,6 +18,7 @@ help:
 	@echo "  install               install this collection to the users path (~/.ansible/collections)"
 	@echo "  uninstall             uninstall this collection from the users path (~/.ansible/collections)"
 	@echo "  play                  run test playbook (site.yml)"
+	@echo ""
 
 build: clean
 	$(GALAXY) collection build -f

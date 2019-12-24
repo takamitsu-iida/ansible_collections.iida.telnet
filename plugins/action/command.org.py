@@ -9,6 +9,7 @@ __metaclass__ = type
 import os
 import time
 
+from ansible.module_utils._text import to_text
 from ansible.module_utils.six import string_types
 from ansible.plugins.action.normal import ActionModule as _ActionModule
 
@@ -69,10 +70,8 @@ class ActionModule(_ActionModule):
     # display.v(str(self._play_context.become))       #=> #False
     # display.v(str(self._play_context.become_pass))  #=> None
 
-    run_as_module = True
-    if not hasattr(self._play_context, 'delegate_to'):
-      # return dict(failed=True, msg='iida.telnet.command module require delegate_to directive but not set')
-      run_as_module = False
+    # if not hasattr(self._play_context, 'delegate_to'):
+    #   return dict(failed=True, msg='iida.telnet.telnet module require delegate_to directive but not set')
 
     #
     # get hostvars
@@ -144,21 +143,47 @@ class ActionModule(_ActionModule):
       self._task.args['network_os'] = network_os
 
     #
-    # RUN THE MODULE
+    # DO NOT RUN THE MODULE
+    # result = super(ActionModule, self).run(task_vars=task_vars)
     #
-
-    if run_as_module:
-      result = super(ActionModule, self).run(task_vars=task_vars)
-    else:
-      tc = TelnetClient(self._task.args)
-      result = tc.process_command()
 
     #
     # post process
     #
 
-    if self._task.args.get('log') is True and result.get('__log__'):
-      result['log_path'] = self.write_log(inventory_hostname, result.get('__log__'))
-      del result['__log__']
+    result = {
+      'changed': False
+    }
+
+    responses = None
+    try:
+      tc = TelnetClient(self._task.args)
+      tc.login()
+      responses = tc.run_commands()
+      tc.logout()
+    except Exception as e:
+      result['failed'] = True
+      result['msg'] = 'Telnet action failed'
+      result['original_message'] = to_text(e)
+      return result
+
+    result.update({
+      'failed': False,
+      'stdout': responses,
+      'stdout_lines': list(self.to_lines(responses))
+    })
+
+    # for debug purpose
+    if self._task.args.get('debug', False):
+      result.update({
+        'prompt_histories': tc.prompt_histories,
+        'command_histories': tc.command_histories,
+        # 'raw_outputs': tc.raw_outputs
+      })
+
+    # save to logfile
+    if self._task.args.get('log'):
+      log_path = self.write_log(inventory_hostname, '\n'.join(responses))
+      result['log_path'] = log_path
 
     return result

@@ -1,7 +1,7 @@
 ---
 
-# ansible_connection: network_cli  # in case of ssh. telnet does not require this.
-ansible_ssh_common_args: ""      # in case of ssh.
+# ansible_connection: network_cli
+# ansible_ssh_common_args: ""
 
 ansible_network_os: ios
 ansible_user: cisco

@@ -1,5 +1,6 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# pylint: disable=missing-docstring
+# pylint: disable=missing-docstring, broad-except
 
 # (c) 2019, Takamitsu IIDA (@takamitsu-iida)
 
@@ -11,10 +12,14 @@ from time import sleep
 
 from ansible.module_utils._text import to_text, to_bytes
 from ansible.module_utils.network.common.utils import to_list
+from ansible.module_utils.six import string_types
 
 # Python3 telnetlib.py needs to be modified so that we can receive a lot of messages
 # from network device like show tech-support.
-from ansible_collections.iida.telnet.plugins.module_utils.telnetlib import Telnet
+if __name__ == '__main__':
+  from telnetlib import Telnet
+else:
+  from ansible_collections.iida.telnet.plugins.module_utils.telnetlib import Telnet
 
 class TelnetClient(object):
 
@@ -44,6 +49,8 @@ class TelnetClient(object):
       - command_timeout
       - pause
       - console
+      - log
+      - debug
 
     Arguments:
         params {dict} -- param dictionary
@@ -66,6 +73,9 @@ class TelnetClient(object):
     self._command_timeout = params.get('command_timeout', self.DEFAULT_COMMAND_TIMEOUT)
     self._pause = params.get('pause', self.DEFAULT_PAUSE)
     self._console = params.get('console', self.DEFAULT_CONSOLE)
+
+    self._log = params.get('log', False)
+    self._debug = params.get('debug', False)
 
     # output buffer
     self._raw_outputs = list()
@@ -204,6 +214,14 @@ class TelnetClient(object):
 
   # END OF GETTER/SETTER
 
+  def to_lines(self, stdout):
+    """split to lines"""
+    for item in stdout:
+      if isinstance(item, string_types):
+        item = str(item).split('\n')
+      yield item
+
+
   def add_raw_outputs(self, output):
     """add output to raw_outputs"""
     self.raw_outputs().append(to_text(output, errors='surrogate_or_strict'))
@@ -256,18 +274,22 @@ class TelnetClient(object):
 
   def login(self):
     """Login to the target host"""
+    result = {
+      'failed': True
+    }
+
     tn = self.get_connection()
     if tn is None:
-      return
+      result['msg'] = 'Telnet connection failed.'
+      return result
 
     user = self.user()
     password = self.password()
+    login_timeout = self.login_timeout()
 
     command_prompts = self.command_prompts
     login_prompts = self.login_prompts
     password_prompts = self.password_prompts
-
-    login_timeout = self.login_timeout()
 
     try:
       if self.console():
@@ -278,7 +300,9 @@ class TelnetClient(object):
         index, match, out = tn.expect(login_prompts, login_timeout)
         if index < 0:
           self.close_connection()
-          raise Exception('Failed to expect login prompt: %s' % to_text(out))
+          result['msg'] = "Failed to expect login prompt"
+          result['original_message'] = to_text(out)
+          return result
         self.match_prompt(match)
         self.add_raw_outputs(out)
         tn.write(to_bytes('%s\n' % user))
@@ -287,7 +311,9 @@ class TelnetClient(object):
         index, match, out = tn.expect(password_prompts, login_timeout)
         if index < 0:
           self.close_connection()
-          raise Exception('Failed to expect password prompt: %s' % to_text(out))
+          result['msg'] = "Failed to expect password prompt"
+          result['original_message'] = to_text(out)
+          return result
         self.match_prompt(match)
         self.add_raw_outputs(out)
         tn.write(to_bytes('%s\n' % password))
@@ -296,7 +322,9 @@ class TelnetClient(object):
       index, match, out = tn.expect(command_prompts, login_timeout)
       if index < 0:
         self.close_connection()
-        raise Exception('Wrong password or failed to expect prompt: %s' % to_text(out))
+        result['msg'] = "Wrong password or failed to expect prompt"
+        result['original_message'] = to_text(out)
+        return result
       self.match_prompt(match)
       self.add_raw_outputs(out)
 
@@ -305,7 +333,12 @@ class TelnetClient(object):
 
     except EOFError as e:
       self.close_connection()
-      raise Exception('Telnet action failed: %s' % to_text(e))
+      result['msg'] = "Telnet login() failed"
+      result['original_message'] = to_text(e)
+      return result
+
+    result['failed'] = False
+    return result
 
 
   def on_login(self):
@@ -367,6 +400,9 @@ class TelnetClient(object):
 
   def send_command(self, command):
     tn = self.get_connection()
+    if tn is None:
+      return
+
     tn.write(to_bytes('%s\n' % command))
     self.add_command_histories(command)
 
@@ -384,6 +420,8 @@ class TelnetClient(object):
   def send_and_wait(self, command, prompt=None, answer=None):
     """Send a command and wait for prompt"""
     tn = self.get_connection()
+    if tn is None:
+      return
 
     command_timeout = self.command_timeout()
 
@@ -456,3 +494,92 @@ class TelnetClient(object):
         sleep(pause)
 
     return responses
+
+
+  def process_command(self):
+    """process login() run_command() logout()"""
+
+    result = {
+      'failed': True,
+      'changed': False
+    }
+
+    login_result = self.login()
+    if login_result.get('failed'):
+      result.update(login_result)
+      return result
+
+    try:
+      responses = self.run_commands()
+      self.logout()
+    except Exception as e:
+      result['msg'] = 'run_commands() failed'
+      result['original_message'] = to_text(e)
+      return result
+
+    result.update({
+      'failed': False,
+      'stdout': responses,
+      'stdout_lines': list(self.to_lines(responses))
+    })
+
+    # for debug purpose
+    if self._debug:
+      result.update({
+        'prompt_histories': self.prompt_histories,
+        'command_histories': self.command_histories,
+        # 'raw_outputs': tc.raw_outputs
+      })
+
+    # store log in result and save to file in action plugin
+    # __log__ key will be removed by action plugin
+    if self._log:
+      result.update({
+        '__log__': '\n'.join(responses)
+      })
+
+    return result
+
+#
+# TEST
+#
+if __name__ == '__main__':
+
+  def main():
+    """main function for test"""
+
+    params = {
+      'network_os': "ios",
+      'host': "10.35.185.2",
+      'port': "23",
+      'user': "cisco",
+      'password': "cisco",
+      'become': True,
+      'become_pass': "cisco",
+      'connect_timeout': 10,
+      'login_timeout': 5,
+      'command_timeout': 10
+    }
+
+    params['commands'] = [
+      'show ip int brief',
+      'show process cpu | inc CPU'
+    ]
+
+    tc = TelnetClient(params)
+
+    login_result = tc.login()
+    if login_result.get('failed'):
+      print(login_result.get('msg', ''))
+      print(login_result.get('original_message', ''))
+      return -1
+
+    responses = tc.run_commands()
+    tc.logout()
+
+    for response in responses:
+      print(response)
+
+
+  import sys
+  sys.exit(main())

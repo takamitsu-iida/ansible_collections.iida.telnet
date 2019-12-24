@@ -1,42 +1,42 @@
 ---
-#
+
 # Send commands to cisco device over telnet
 #
-
 # 2019/12/22
 # Takamitsu IIDA (@takamitsu-iida)
 
 # Configuration Parameters
 #
-#   commands ---  コマンドの配列
-#   network_os --- 装置種別（デフォルトはiosで、現在のところiosしか試していない）
+#   commands ---  list of commands to be sent
+#   network_os --- ios, fujitsu_sir, fujitsu_srs
 #   debug -- return additional info
 #   log -- create log file or not (default is false)
 #   console -- target device is console server or not (default is false)
-
+#
 # Returns
 #
 #   stdout
 #   stdout_lines
 
-- name: execute command on cisco devices
-  hosts: behind_bastion
-  # hosts: r1
-  # hosts: telnet_routers
-  gather_facts: False
+- name: execute command on cisco devices over telnet connection
+  # hosts: behind_bastion
+  hosts: r1
+  gather_facts: false  # this must be false
 
   tasks:
 
     - name: send commands
+      # behind bastion host requires delegation
+      # delegate_to: pg04
+      delegate_to: localhost
       iida.telnet.command:
-        delegate_to: pg04
         debug: true
         log: true
         console: false
         commands:
-          - command: clear counters gig 2
-            prompt: '\[confirm\]'
-            answer: y
+          # - command: clear counters gig 2
+          #   prompt: '\[confirm\]'
+          #   answer: y
           - show run int gig 2
           - show process cpu | inc CPU
       register: r

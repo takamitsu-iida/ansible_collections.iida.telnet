@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# pylint: disable=C0111,E0611
+# pylint: disable=missing-docstring, broad-except, anomalous-backslash-in-string
+
 
 # (c) 2019, Takamitsu IIDA (@takamitsu-iida)
 
@@ -93,27 +94,39 @@ options:
       - target device is console server or not.
     type: bool
     default: 'false'
-
 '''
 
 EXAMPLES = '''
-- name: send commands
-  iida.telnet.command:
-    commands:
-      - show process cpu | inc CPU
-      - show ip int brief
-  register: r
+- name: execute command on cisco devices over telnet connection
+  # hosts: behind_bastion
+  hosts: r1
+  gather_facts: false  # this must be false
 
-- hosts:
-  tr1 ansible_host=172.28.128.3
+  tasks:
 
-- group_vars:
-  ansible_network_os: ios
-  ansible_user: cisco
-  ansible_ssh_pass: cisco
-  ansible_become: yes
-  ansible_become_method: enable
-  ansible_become_pass: cisco
+    - name: send commands
+      # behind bastion host requires delegation
+      # delegate_to: pg04
+      iida.telnet.command:
+        debug: true
+        log: true
+        console: false
+        commands:
+          - command: clear counters gig 2
+            prompt: "\[confirm\]"
+            answer: y
+          - show run int gig 2
+          - show process cpu | inc CPU
+      register: r
+
+    - name: show stdout
+      debug:
+        msg: |
+          {% for s in r.stdout %}
+          -----
+          {{ s }}
+
+          {% endfor %}
 '''
 
 RETURN = '''
@@ -134,3 +147,62 @@ log_path:
   returned: when log is yes
   type: string
 '''
+
+from ansible.module_utils._text import to_text
+from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.six import string_types
+
+# import from collection
+from ansible_collections.iida.telnet.plugins.module_utils.telnet_util import TelnetClient
+
+
+def to_lines(stdout):
+  for item in stdout:
+    if isinstance(item, string_types):
+      item = str(item).split('\n')
+    yield item
+
+
+def main():
+  """main entry point for module execution"""
+
+  # read default value from TelnetClient class (module_utils/telnet_util.py)
+  DEFAULT_BECOME = TelnetClient.DEFAULT_BECOME                    # False
+  DEFAULT_CONNECT_TIMEOUT = TelnetClient.DEFAULT_CONNECT_TIMEOUT  # 10
+  DEFAULT_LOGIN_TIMEOUT = TelnetClient.DEFAULT_LOGIN_TIMEOUT      # 5
+  DEFAULT_COMMAND_TIMEOUT = TelnetClient.DEFAULT_COMMAND_TIMEOUT  # 5
+  DEFAULT_PAUSE = TelnetClient.DEFAULT_PAUSE                      # 1
+  DEFAULT_CONSOLE = TelnetClient.DEFAULT_CONSOLE                  # False
+
+  argument_spec = dict(
+    commands=dict(type='list', required=True),
+    network_os=dict(default='ios', type='str'),
+    host=dict(type='str', required=True),
+    port=dict(default=23, type='int'),
+    user=dict(default="", type='str'),
+    password=dict(default="", type='str'),
+    become=dict(default=DEFAULT_BECOME, type='bool'),
+    become_pass=dict(default="", type='str'),
+    connect_timeout=dict(default=DEFAULT_CONNECT_TIMEOUT, type='int'),
+    login_timeout=dict(default=DEFAULT_LOGIN_TIMEOUT, type='int'),
+    command_timeout=dict(default=DEFAULT_COMMAND_TIMEOUT, type='int'),
+    pause=dict(default=DEFAULT_PAUSE, type='int'),
+    console=dict(default=DEFAULT_CONSOLE, type='bool'),
+    log=dict(default=False, type='bool'),
+    debug=dict(default=False, type='bool')
+  )
+
+  # generate module instance
+  module = AnsibleModule(argument_spec=argument_spec, supports_check_mode=True)
+
+  tc = TelnetClient(module.params)
+  result = tc.process_command()
+
+  if result.get('failed'):
+    module.fail_json(**result)
+
+  module.exit_json(**result)
+
+
+if __name__ == '__main__':
+  main()
