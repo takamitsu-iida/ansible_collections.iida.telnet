@@ -69,10 +69,8 @@ class ActionModule(_ActionModule):
     # display.v(str(self._play_context.become))       #=> #False
     # display.v(str(self._play_context.become_pass))  #=> None
 
-    run_as_module = True
-    if not hasattr(self._play_context, 'delegate_to'):
-      # return dict(failed=True, msg='iida.telnet.command module require delegate_to directive but not set')
-      run_as_module = False
+    # if delegate_to is specified, we must run in module
+    run_as_module = bool(hasattr(self._play_context, 'delegate_to'))
 
     #
     # get hostvars
