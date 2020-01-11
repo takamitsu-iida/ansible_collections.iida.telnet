@@ -28,7 +28,6 @@
     - name: send commands
       # behind bastion host requires delegation
       # delegate_to: pg04
-      delegate_to: localhost
       iida.telnet.command:
         debug: true
         log: true
